@@ -15,6 +15,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")                      # 화면 없는 서버에서도 그릴 수 있게
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib import font_manager
 
 from core import config as C
@@ -73,19 +74,35 @@ def funnel_png(f) -> bytes:
 
 
 def device_png(g) -> bytes:
+    """분해 축 전환율 비교. g에 "사유" 컬럼이 있으면(core.metrics.trust_check()
+    를 이미 돌려 채워 둔 값 — 대시보드 분해 표와 같은 재사용) 그 칸은 막대와
+    수치 없이 사유만 적는다. 값을 회색으로도 보여주지 않는다."""
     use_korean_font()
-    g = g.sort_values("전환율")
-    fig, ax = plt.subplots(figsize=(7.2, 0.62 * len(g) + 1.0))
-    colors = [C.COLORS["block"] if v == g.전환율.min() else C.BRAND["primary"]
-              for v in g.전환율]
-    y = range(len(g))
-    ax.barh(list(y), g.전환율 * 100, color=colors, height=0.55)
+    has_reason = "사유" in g.columns
+    ok = (g[g["사유"].isna()] if has_reason else g).sort_values("전환율")
+    hidden = g[g["사유"].notna()] if has_reason else g.iloc[0:0]
+    order = pd.concat([ok, hidden]) if len(hidden) else ok
+
+    fig, ax = plt.subplots(figsize=(7.2, 0.62 * len(order) + 1.0))
+    is_hidden = [has_reason and pd.notna(r["사유"]) for _, r in order.iterrows()]
+    colors = [
+        C.BRAND["line"] if h else
+        (C.COLORS["block"] if v == ok["전환율"].min() else C.BRAND["primary"])
+        for h, v in zip(is_hidden, order["전환율"])]
+    widths = [0 if h else v * 100 for h, v in zip(is_hidden, order["전환율"])]
+    y = range(len(order))
+    ax.barh(list(y), widths, color=colors, height=0.55)
     ax.set_yticks(list(y))
-    ax.set_yticklabels(g[g.columns[0]], fontsize=10)
-    ax.set_xlim(0, g.전환율.max() * 148)
-    for i, (v, n) in enumerate(zip(g.전환율, g.도달)):
-        ax.text(v * 101, i, f"{v*100:.1f}%   ({n:,}명)", va="center",
-                fontsize=9, color=C.BRAND["muted"])
+    ax.set_yticklabels(order[order.columns[0]], fontsize=10)
+    xmax = (ok["전환율"].max() if len(ok) else order["전환율"].max()) * 148
+    ax.set_xlim(0, xmax)
+    for i, (h, r) in enumerate(zip(is_hidden, order.itertuples())):
+        if h:
+            ax.text(xmax * 0.015, i, f"표본 부족 — {r.사유}", va="center",
+                    fontsize=9, color=C.BRAND["muted"])
+        else:
+            ax.text(r.전환율 * 101, i, f"{r.전환율*100:.1f}%   ({r.도달:,}명)",
+                    va="center", fontsize=9, color=C.BRAND["muted"])
     for s in ("top", "right", "bottom"):
         ax.spines[s].set_visible(False)
     ax.spines["left"].set_color(C.BRAND["line"])

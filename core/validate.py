@@ -100,7 +100,7 @@ def run_checks(t: dict) -> list[dict]:
     # 3. 날짜 범위 — 근태 데이터가 config.PERIOD를 벗어나면
     #    근거: 기간 밖 데이터가 섞이면 초과근무 월평균·3분위 계산이 왜곡된다.
     att = t["HR_근태"]
-    d = pd.to_datetime(att["년월"], format="%Y-%m", errors="coerce")
+    d = to_dt(att["년월"])
     lo, hi = pd.Timestamp(C.PERIOD[0]), pd.Timestamp(C.PERIOD[1])
     out_of_range = int(((d < lo) | (d > hi)).sum())
     out.append(_r(
