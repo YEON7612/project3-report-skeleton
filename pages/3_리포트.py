@@ -143,10 +143,22 @@ with body:
         # 2·6·8장(사람이 쓰는 장)을 폼 하나로 묶는다 — 어느 장을 골라도
         # 같은 폼이 뜨고, "저장" 한 번으로 셋 다 저장된다.
         human_secs = {s["title"]: s for s in secs if s["kind"] == "human"}
+        # 작성 가이드 — 참고용. text_area의 value로는 절대 안 넣는다
+        # (입력 칸은 항상 빈 채로 시작해야 한다). st.expander로 입력 칸과
+        # 시각적으로 분명히 구분한다.
+        guide_funcs = {
+            "2. 배경": S.guide_background,
+            "6. 해석": S.guide_interpretation,
+            "8. 제안": S.guide_proposal,
+        }
+        guide_disclaimer = "이 내용은 가이드일 뿐입니다. 담당자가 최종 작성 후 확정해야 합니다."
         with st.form("사람이 쓰는 장"):
             inputs = {}
             for htitle in ["2. 배경", "6. 해석", "8. 제안"]:
                 hs = human_secs[htitle]
+                with st.expander(f"📋 {htitle} 작성 가이드 (참고용)"):
+                    st.markdown(guide_funcs[htitle](t))
+                    st.caption(guide_disclaimer)
                 inputs[htitle] = st.text_area(
                     htitle, value=hs["body"], height=180,
                     placeholder=hs["placeholder"])

@@ -331,6 +331,78 @@ def limits_fixed_sentences(t: dict) -> list[str]:
     ]
 
 
+# ── 사람이 쓰는 장의 작성 가이드 (참고용, value로 넣지 않는다) ──────
+# 세 함수 모두 이미 있는 함수(kpis·funnel·funnel_by·monthly_verdict·
+# limits_items)의 결과만 조합한다 — 여기서 새로 계산하지 않는다.
+# check_phrasing()에 걸리는 표현을 쓰지 않고, trust_check()로 감춰진
+# 칸의 수치(전환율·도달·전환·비중)는 절대 넣지 않는다 — "표본 N건
+# (최소 30)"처럼 이미 공개된 조건 값만 재사용한다.
+def guide_background(t: dict) -> str:
+    """2. 배경 작성 가이드. kpis() 현재값만 나열한다."""
+    k = M.kpis(t)
+    names = ["재직인원", "입사1년내이탈률", "평균평가점수", "월평균초과근무시간"]
+    lines = ["참고용 수치 — 배경을 쓸 때 참고하십시오."]
+    for name in names:
+        v = k[name]
+        lines.append(f"- {name}: {v['fmt'].format(v['value'])}")
+    lines.append("")
+    lines.append("이 수치들을 보고 어떤 의사결정을 준비하고 있는지, 지금 이 "
+                 "분석이 왜 필요한지 적으십시오.")
+    return "\n".join(lines)
+
+
+def guide_interpretation(t: dict) -> str:
+    """6. 해석 작성 가이드. 병목 구간·판정 카드·표본 부족 칸 개수만 알린다."""
+    emp, sep = t["HR_직원"], t["HR_퇴사이력"]
+    f = M.funnel(emp, sep)
+    bn = f[f.is_bottleneck].iloc[0]
+    bi = max(int(f.index[f.is_bottleneck][0]), 1)
+    prev = f.iloc[bi - 1]
+
+    v = M.monthly_verdict(t)
+    items = limits_items(t)
+    masked = [it["내용"] for it in items
+             if it["출처"] == "표본 부족" and "판정하지 않음" in it["내용"]]
+
+    lines = [
+        "참고용 수치 — 숫자가 무엇을 뜻하는지 쓸 때 참고하십시오.",
+        f"- 획득 퍼널에서 직전 단계 대비 전환율이 가장 낮은 구간: "
+        f"{prev.label} → {bn.label} ({bn.step_rate*100:.1f}%).",
+    ]
+    if v["verdict"] == "무효":
+        lines.append(f"- 판정 카드: 무효 — {v['reason']}")
+    else:
+        p, g = v["primary"], v["guard"]
+        lines.append(f"- 판정 카드: {v['verdict']} "
+                     f"({p['name']} {p['pct']:+.1f}%, {g['name']} {g['pct']:+.1f}%)")
+    if masked:
+        lines.append(f"- 분해 결과 중 {len(masked)}개 칸은 표본 부족으로 "
+                     f"판정하지 않았습니다(예: {masked[0]}).")
+    lines.append("")
+    lines.append("이 수치들이 무엇을 뜻하는지 적으십시오.")
+    return "\n".join(lines)
+
+
+def guide_proposal(t: dict) -> str:
+    """8. 제안 작성 가이드. "확인하지 못한 것"과 표본 부족 칸 개수만 알린다."""
+    items = limits_items(t)
+    unexamined = [it["내용"] for it in items if it["출처"] == "확인하지 못한 것"]
+    masked_n = sum(1 for it in items
+                  if it["출처"] == "표본 부족" and "판정하지 않음" in it["내용"])
+
+    lines = ["참고용 — 제안을 쓸 때 참고하십시오.",
+             "이번 분석에서 확인하지 못한 것:"]
+    lines.extend(f"- {u}" for u in unexamined)
+    if masked_n:
+        lines.append(f"- 분해 결과 중 {masked_n}개 칸은 표본 부족으로 아직 "
+                     f"판정하지 못했습니다.")
+    lines.append("")
+    lines.append("무엇을 먼저 할 것인지, 무엇은 지금 하지 않을 것인지 "
+                 "적으십시오. 확인하지 못한 것 중 무엇을 더 볼지도 포함할 "
+                 "수 있습니다.")
+    return "\n".join(lines)
+
+
 # ── 사람이 쓰는 장 (제공) ─────────────────────────────────────────
 def _s2_background(human: dict) -> dict:
     return {
