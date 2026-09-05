@@ -32,6 +32,33 @@ if t is None:
 st.markdown('<div style="font-size:24px;font-weight:800;margin-bottom:16px">'
             '📊 대시보드</div>', unsafe_allow_html=True)
 
+# ── 데이터셋 설명 카드 ────────────────────────────────────────────
+st.markdown(
+    '<div class="card" style="margin-bottom:20px">'
+    '<div style="display:flex;justify-content:space-between;'
+    'align-items:flex-start;gap:16px;flex-wrap:wrap">'
+    '<div style="flex:1;min-width:280px">'
+    '<div style="font-size:16px;font-weight:700;color:var(--ink);'
+    'margin-bottom:8px">데이터셋 설명 — HR 이직 위험 진단</div>'
+    '<div style="font-size:13.5px;color:var(--muted);line-height:1.7">'
+    '이 대시보드는 실제 기업이 아닌 가상의 IT 서비스 기업 데이터를 기반으로 '
+    '합니다(합성 데이터). 입사 → 근속 → 이탈로 이어지는 근속 생존 퍼널을 '
+    '사번(직원) 단위로 분석해, 부서·구간별 이탈 위험과 초과근무 상위 구간의 '
+    '조기 이탈 신호를 조기에 포착하는 것을 목표로 합니다.</div>'
+    '<div style="margin-top:12px;font-size:13px;color:var(--ink)">'
+    '<b>최종 활용 대상</b> — 인사팀장/현업 매니저: 어느 부서·구간에 관리 '
+    '자원을 집중할지, 초과근무 상위 구간을 어떻게 관리할지</div>'
+    '<div style="margin-top:6px;font-size:13px;color:var(--ink)">'
+    '<b>판단 기준</b> — 이탈은 재직 상태(재직/퇴사) 기준으로 판단하며, '
+    '초과근무 상위 구간은 실제 이탈이 아니라 조기 이탈의 전조 신호로 본다'
+    '</div></div>'
+    '<div style="display:flex;flex-direction:column;gap:6px;'
+    'align-items:flex-end">'
+    f'{ui.badge("none", "합성 데이터(가상 기업)")}'
+    f'{ui.badge("none", "300명 규모")}'
+    '</div></div></div>',
+    unsafe_allow_html=True)
+
 # ── 지표 카드 ─────────────────────────────────────────────────────
 k = ui.guard(M.kpis, t)
 if k:
