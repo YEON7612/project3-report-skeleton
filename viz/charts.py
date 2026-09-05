@@ -144,30 +144,6 @@ def effect_decay(w):
     return _base(fig, height=240, margin=dict(l=8, r=8, t=12, b=8))
 
 
-def cac_compare(g):
-    """CAC와 유효 CAC를 나란히. 순위가 뒤집히는 것을 보이는 것이 목적이다."""
-    g = g.sort_values("CAC")
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name="CAC", y=g.channel, x=g.CAC, orientation="h",
-        marker=dict(color=C.BRAND["line"], line=dict(width=0)),
-        text=[f"{v:,.0f}" for v in g.CAC], textposition="inside",
-        textfont=dict(size=11, color=C.BRAND["ink"]),
-        hovertemplate="%{y} CAC %{x:,.0f}원<extra></extra>"))
-    fig.add_trace(go.Bar(
-        name="유효 CAC", y=g.channel, x=g.유효CAC, orientation="h",
-        marker=dict(color=[C.COLORS["block"] if r else C.BRAND["primary"]
-                           for r in g.역전], line=dict(width=0)),
-        text=[f"{v:,.0f}" for v in g.유효CAC], textposition="outside",
-        textfont=dict(size=11, color=C.BRAND["muted"]),
-        hovertemplate="%{y} 유효 CAC %{x:,.0f}원<extra></extra>"))
-    fig.update_layout(barmode="group", bargap=0.35, bargroupgap=0.05)
-    fig.update_yaxes(showgrid=False, tickfont=dict(size=13))
-    fig.update_xaxes(visible=False, range=[0, g.유효CAC.max() * 1.28])
-    return _base(fig, height=64 * len(g) + 30,
-                 margin=dict(l=8, r=8, t=4, b=4))
-
-
 def trend(m, col, suffix=""):
     fig = go.Figure(go.Scatter(
         x=list(m.index), y=m[col], mode="lines+markers",

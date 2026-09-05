@@ -320,9 +320,9 @@ TABLES   = [...]                    # 내 테이블 목록
 FUNNEL_STEPS  = [...]               # ★ 여기가 가장 중요
 FUNNEL_LABELS = {...}
 
-CHANNEL_CAC         = {...}         # 채널별 획득 비용
-CONTRIBUTION_MARGIN = 0.30          # 공헌이익률
-LTV_MONTHS          = 36            # 평균 유지기간
+# CHANNEL_CAC · CONTRIBUTION_MARGIN · LTV_MONTHS — 채널·획득 경로 개념이
+# 있는 도메인에서만 쓴다(이 저장소의 HR 근속 프로젝트는 개념이 없어 제거됨,
+# 8주차 정리 기준 골격 잔재)
 
 THRESHOLDS = {...}                  # 지표별 경고·위험 기준
 MIN_SAMPLE = 1_000
@@ -336,7 +336,7 @@ MIN_SAMPLE = 1_000
 
 | | 어디서 오는가 | 무엇에 쓰는가 | 무엇에 쓰지 않는가 |
 |---|---|---|---|
-| `CHANNEL_CAC` · `CONTRIBUTION_MARGIN` · `LTV_MONTHS` | **가정값.** 업계 벤치마크나 재무팀 합의값 | 손익 환산 · 제안 금액 | **실측이라고 말하지 않는다** |
+| `CHANNEL_CAC` · `CONTRIBUTION_MARGIN` · `LTV_MONTHS` | **제거됨(8주차 정리 기준 골격 잔재)** — 이 저장소(HR 근속)엔 채널·획득 경로 개념이 없어 뺐다 | — | 채널·획득 경로가 있는 도메인이면 되살려 쓴다 |
 | `ad_spend` 테이블 | **실측.** 집행된 광고비 | 채널 효율 — ROAS · CPC · 노출/클릭 | **총액을 가입자 수로 나눠 CAC를 만들지 않는다** |
 
 **광고비를 가입자 수로 나눈 값은 CAC가 아닙니다.** 광고비에는 가입으로 이어지지 않은

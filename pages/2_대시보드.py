@@ -485,23 +485,3 @@ for r in (res or []):
                 st.plotly_chart(charts.peeking(pc, r["lift"]), width="stretch",
                                 config={"displayModeBar": False})
             ui.callout("종료 시점은 실험을 **시작하기 전에** 정해야 합니다.")
-
-# ── 채널 효율 (선택 과제) ─────────────────────────────────────────
-ui.section("획득 경로 효율", "비용만 보면 순위가 뒤집힌다")
-ce = ui.guard(M.channel_efficiency, t)
-if ce is not None and len(ce):
-    c1, c2 = st.columns([1.3, 1])
-    with c1:
-        st.plotly_chart(charts.cac_compare(ce), width="stretch",
-                        config={"displayModeBar": False})
-    with c2:
-        naive = list(ce.sort_values("CAC").channel)
-        real = list(ce.sort_values("유효CAC").channel)
-        st.markdown(
-            f'<div class="card tight">'
-            f'<div style="font-size:12px;color:#64748b">단순 비용 순위</div>'
-            f'<div style="font-size:14px;margin:4px 0 12px">{" < ".join(naive)}</div>'
-            f'<div style="font-size:12px;color:#64748b">유지율 반영 순위</div>'
-            f'<div style="font-size:14px;font-weight:700;color:{C.COLORS["block"]}">'
-            f'{" < ".join(real)}</div></div>', unsafe_allow_html=True)
-        st.caption("비용은 가정값입니다. 리포트에 쓸 때 '가정값 기반'을 남기십시오.")

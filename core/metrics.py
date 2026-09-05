@@ -25,7 +25,6 @@ from scipy import stats
 
 from core import config as C
 from core.load import to_dt
-from core.todo import todo
 
 
 # ── 퍼널 ──────────────────────────────────────────────────────────
@@ -625,29 +624,3 @@ def weekly_effect(res: dict, start: str, bucket_days: int = 14) -> pd.DataFrame:
     g = g.reset_index()
     g["label"] = g.b.apply(lambda i: f"{int(i)*2+1}~{int(i)*2+2}주")
     return g
-
-
-# ── 채널 효율 (선택 과제) ─────────────────────────────────────────
-@st.cache_data(show_spinner=False)
-def channel_efficiency(t: dict) -> pd.DataFrame:
-    """비용만 보면 순위가 뒤집힌다. 유지율까지 반영한 유효 비용을 함께 낸다.
-
-    ★ Day3 선택 과제입니다. 안 만들어도 나머지가 돕니다.
-
-    획득 비용이 싼 경로가 실제로 싼 것이 아니다 —
-    데려온 대상이 남지 않으면 같은 자리를 다시 채워야 한다.
-
-        유효 비용 = 획득 비용 / 유지율
-
-    비용 개념이 없으면 **투입 공수(인시)**로 해도 된다.
-    획득 경로 구분이 없으면 이 함수를 지운다.
-
-    ★ 여기 쓰이는 CHANNEL_CAC 는 **가정값**이다. 광고비 실측 테이블에서
-      유도하지 않는다 — 광고비는 개인 단위로 추적되지 않아 가입과 이을 수 없다.
-      리포트에 이 값이 들어가면 "가정값 기반"을 문장에 남긴다. → DESIGN.md §4-3
-
-    반환: DataFrame[채널, 방문, 가입, 전환율, CAC, 유지율, 유효CAC, 역전]
-    """
-    todo("Day3 선택 과제", "채널 효율",
-         "내 도메인에 획득 경로 구분이 있습니까? 비용이 없으면 투입 공수로 바꾸십시오.",
-         "core/metrics.py  channel_efficiency()")

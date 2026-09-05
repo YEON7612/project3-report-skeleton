@@ -77,7 +77,9 @@ grep -rn "★" core/ report/ pages/
 | **금** | 리포트 자동 5장 | `report/sections.py` |
 | **토** | 아카이브 · 재현 확인 · `/앱점검` | — (채울 곳 없음. 완성과 점검) |
 
-TODO는 **13곳**입니다. 그중 하나(`channel_efficiency`)는 **선택 과제**라 안 만들어도 나머지가 돕니다.
+TODO는 **13곳**입니다. 그중 하나(`channel_efficiency`)는 **선택 과제**였으나, 이 프로젝트(HR 근속)엔
+"채널"·"획득 경로" 개념 자체가 없어 **제거됨(8주차 정리 기준 골격 잔재)** — core/metrics.py·
+viz/charts.py·core/config.py·pages/2_대시보드.py에서 관련 코드를 전부 지웠습니다.
 
 ---
 
