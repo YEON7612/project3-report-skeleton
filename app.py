@@ -22,6 +22,9 @@ ui.context_bar(st.session_state.run)
 st.markdown(
     '<div style="font-size:26px;font-weight:800;margin-bottom:2px">'
     '🏠 성장 퍼널 분석과 자동 리포트</div>'
+    f'<div style="font-size:15px;font-weight:600;color:{C.BRAND["ink"]};'
+    f'margin-bottom:8px">'
+    '초과근무가 많으면 1년 내 퇴사 위험도 높을까? — 근속 생존 퍼널 분석</div>'
     '<div style="color:#64748b;font-size:14px;margin-bottom:22px">'
     '데이터를 넣으면 검증 · 계산 · 대시보드 · 리포트까지 이어집니다. '
     '사람은 게이트 세 곳에서만 판단합니다.</div>',
