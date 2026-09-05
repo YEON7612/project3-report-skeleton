@@ -30,7 +30,7 @@ if t is None:
     st.stop()
 
 st.markdown('<div style="font-size:24px;font-weight:800;margin-bottom:16px">'
-            '대시보드</div>', unsafe_allow_html=True)
+            '📊 대시보드</div>', unsafe_allow_html=True)
 
 # ── 지표 카드 ─────────────────────────────────────────────────────
 k = ui.guard(M.kpis, t)

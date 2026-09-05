@@ -43,7 +43,7 @@ secs[_limits_idx] = S._s7_limits(t, items=st.session_state.limits_items)
 DIM = "부서"
 
 st.markdown('<div style="font-size:24px;font-weight:800;margin-bottom:16px">'
-            '리포트</div>', unsafe_allow_html=True)
+            '📄 리포트</div>', unsafe_allow_html=True)
 
 nav, body = st.columns([1, 3.4])
 

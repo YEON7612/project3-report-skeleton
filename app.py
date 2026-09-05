@@ -21,7 +21,7 @@ ui.context_bar(st.session_state.run)
 
 st.markdown(
     '<div style="font-size:26px;font-weight:800;margin-bottom:2px">'
-    '성장 퍼널 분석과 자동 리포트</div>'
+    '🏠 성장 퍼널 분석과 자동 리포트</div>'
     '<div style="color:#64748b;font-size:14px;margin-bottom:22px">'
     '데이터를 넣으면 검증 · 계산 · 대시보드 · 리포트까지 이어집니다. '
     '사람은 게이트 세 곳에서만 판단합니다.</div>',

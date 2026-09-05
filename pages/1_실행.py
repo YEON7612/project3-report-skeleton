@@ -21,7 +21,7 @@ run = st.session_state.run
 
 ui.context_bar(run)
 st.markdown('<div style="font-size:24px;font-weight:800;margin-bottom:18px">'
-            '실행</div>', unsafe_allow_html=True)
+            '▶️ 실행</div>', unsafe_allow_html=True)
 
 # ── 1. 데이터 선택 ────────────────────────────────────────────────
 ui.section("1. 데이터 선택")

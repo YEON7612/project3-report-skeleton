@@ -20,7 +20,7 @@ if "run" not in st.session_state:
 ui.context_bar(st.session_state.run)
 
 st.markdown('<div style="font-size:24px;font-weight:800;margin-bottom:16px">'
-            '아카이브</div>', unsafe_allow_html=True)
+            '🗂️ 아카이브</div>', unsafe_allow_html=True)
 
 runs = gates.load_all()
 
