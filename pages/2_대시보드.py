@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from core import config as C, load, metrics as M
+from report.sections import check_phrasing
 from viz import charts, ui
 
 st.set_page_config(page_title="대시보드", page_icon="📊", layout="wide",
@@ -266,7 +267,71 @@ def _render_retention_funnel(t):
             "info")
 
 
-tab_acq, tab_ret = st.tabs(["획득 퍼널", "유지 퍼널"])
+@st.fragment
+def _render_recent_cohort(t):
+    """최근 코호트 — recent_cohort_reach()의 실측 도달률·관측커버리지를
+    보정 없이 그대로 보여준다(보정을 뺀 이유는 metrics.py 쪽 docstring과
+    판단기준.md 참고).
+
+    표본부족(판정="무효")인 행은 도달률·관측커버리지 수치를 아예 뺀 별도
+    표로 보여준다 — 왼쪽 획득 퍼널 분해 표(funnel_by())가 표본 부족 칸의
+    값을 숨기는 것과 같은 원칙(계산은 해 두되 못 믿는 값은 보여주지 않는다).
+    """
+    res = ui.guard(M.recent_cohort_reach, t["HR_직원"], t["HR_퇴사이력"])
+    if res is None:
+        return
+    recent = res["recent"]
+
+    st.caption(
+        f"코호트(입사월)별 실제 {res['reach_step']} 도달률과 관측커버리지입니다. "
+        f"보정 없는 실측값입니다.")
+
+    # trusted/untrusted 두 표로 나눈다 — _render_decomposition()의 funnel_by()
+    # 분해 표와 같은 방식이다.
+    trusted = recent[recent["판정"] != "무효"]
+    untrusted = recent[recent["판정"] == "무효"]
+
+    if len(trusted):
+        st.dataframe(
+            trusted,
+            hide_index=True,
+            column_order=["코호트", "n", "관측커버리지", "도달률", "판정"],
+            column_config={
+                "코호트": st.column_config.TextColumn("코호트(입사월)"),
+                "n": st.column_config.NumberColumn("표본", format="%,d"),
+                "관측커버리지": st.column_config.ProgressColumn(
+                    "관측커버리지", format="%.0f%%", min_value=0.0, max_value=100.0),
+                "도달률": st.column_config.NumberColumn(
+                    f"{res['reach_step']} 도달률", format="%.1f%%"),
+                "판정": st.column_config.TextColumn("판정"),
+            },
+        )
+    if len(untrusted):
+        st.caption("표본 부족으로 판정하지 않은 코호트 — 수치 대신 사유만 표시합니다.")
+        st.dataframe(
+            untrusted[["코호트", "n", "사유"]],
+            hide_index=True,
+            column_config={
+                "코호트": st.column_config.TextColumn("코호트(입사월)"),
+                "n": st.column_config.NumberColumn("표본", format="%,d"),
+                "사유": st.column_config.TextColumn("사유"),
+            },
+        )
+
+    n_invalid = int((recent["판정"] == "무효").sum())
+    n_low_cov = int((recent["판정"] == "관측부족").sum())
+    sentence = (
+        f"최근 {len(recent)}개 코호트 중 {n_invalid}개는 표본이 "
+        f"{C.MIN_SAMPLE}건 미만이라 판정하지 않았고, {n_low_cov}개는 "
+        f"관측커버리지가 100%에 못 미쳐 아직 판단하기엔 이릅니다.")
+    st.caption(sentence)
+    bad = check_phrasing(sentence)
+    if bad:
+        ui.callout(f"자동 생성 문장에 인과를 단정하는 표현이 있습니다: "
+                   f"<b>{', '.join(bad)}</b>.")
+
+
+tab_acq, tab_ret, tab_cohort = st.tabs(["획득 퍼널", "유지 퍼널", "최근 코호트"])
 with tab_acq:
     ui.section("획득 퍼널", "그레인을 먼저 확인한다")
     f = ui.guard(M.funnel, t["HR_직원"], t["HR_퇴사이력"])
@@ -281,6 +346,9 @@ with tab_acq:
 with tab_ret:
     ui.section("유지 퍼널", "데려온 대상이 남는가")
     _render_retention_funnel(t)
+with tab_cohort:
+    ui.section("최근 코호트", "관측이 덜 찬 코호트는 아직 판단하기엔 이르다")
+    _render_recent_cohort(t)
 
 @st.dialog("이 값을 왜 보여주지 않나")
 def _why_hidden_dialog(n_total: int) -> None:

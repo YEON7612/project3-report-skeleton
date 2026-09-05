@@ -159,6 +159,117 @@ def funnel_by(emp: pd.DataFrame, sep: pd.DataFrame, dim: str,
     return g.reset_index()
 
 
+# ── 최근 코호트 ───────────────────────────────────────────────────
+# 화면에 보여줄 최근 코호트 개수. need_years가 1년이라 12개월이면 커버리지가
+# ~8%(최신 달)에서 100%(1년 전 달)까지 걸쳐 있어 "관측 부족" 사례를 보여주는
+# 목적에 맞는다 — 더 늘리면 이미 성숙한 달까지 같이 보여 화면이 늘어질 뿐이다.
+RECENT_COHORT_MONTHS = 12
+
+
+def _cohort_frame(emp: pd.DataFrame, sep: pd.DataFrame):
+    """funnel()과 같은 조인·종료일 계산. 코호트(입사월) 열만 추가한다."""
+    e = emp[["사번", "입사일", "재직상태"]].copy()
+    e["입사일"] = to_dt(e["입사일"])
+    s = sep[["사번", "퇴사일"]].copy()
+    s["퇴사일"] = to_dt(s["퇴사일"])
+    e = e.merge(s, on="사번", how="left")
+
+    snapshot = pd.Timestamp(C.SNAPSHOT_DATE)
+    e["종료일"] = e["퇴사일"].where(e["재직상태"] != "재직", snapshot)
+    e["코호트"] = e["입사일"].dt.to_period("M")
+    return e, snapshot
+
+
+def _reach_rate(g: pd.DataFrame, term_col: str, need_years: float) -> tuple[int, float]:
+    """이 그룹에서 term_col 기준 duration이 need_years 이상인 비율(%)."""
+    dur = (g[term_col] - g["입사일"]).dt.days / 365.25
+    reached = int((dur >= need_years).sum())
+    n = len(g)
+    return reached, (reached / n * 100 if n else np.nan)
+
+
+@st.cache_data(show_spinner=False)
+def recent_cohort_reach(emp: pd.DataFrame, sep: pd.DataFrame) -> dict:
+    """최근 코호트 진단 — 코호트(입사월)별 실측 도달률과 관측커버리지를 그대로 보여준다.
+
+    funnel()의 KM 추정은 전체 표본을 한 번에 본다. 이 표는 그것과 별개로,
+    **코호트(입사월)별로** "이 코호트가 퍼널 첫 실제 단계(C.FUNNEL_STEPS[1] —
+    지금은 "1년차_잔류")에 도달할 시간이 실제로 얼마나 지났는가"를 직접
+    보여주는 진단용 표다. 새 임계값·새 그레인을 만들지 않는다 — 그레인은
+    사번 1건(코호트 안에서), 기준 연차는 FUNNEL_STEP_YEARS를 그대로 쓴다.
+
+        관측커버리지  = min((SNAPSHOT_DATE - 코호트월 첫날) / (기준연차×365.25일), 1.0) × 100.
+                      최근에 입사한 코호트일수록 기준 연차(1년)가 아직 안
+                      지나 이 값이 낮다 — 이탈이 아니라 **아직 그 나이에
+                      이르지 않았을 뿐**이라는 뜻이다(funnel()이 KM으로
+                      다루는 중도절단과 같은 문제를 코호트 단위로 단순화한
+                      근사치).
+        도달률       그 코호트 사번 중 duration(입사일→종료일, 년)이 기준
+                      연차 이상인 비율. **실측값이며 보정하지 않는다.**
+
+    ★ 처음엔 "도달률÷(관측커버리지/100)"로 선형 보정한 값을 냈었다. 백테스트로
+      검증해 보니(성숙 코호트를 낮은 커버리지에서 관측한 것처럼 되짚어 실제
+      최종값과 비교) 커버리지 수준과 무관하게 오차가 항상 ~100%에 가까웠다.
+      원인은 버그가 아니라 이 지표의 성격이다 — "1년차_잔류"는 관측 기간
+      내내 조금씩 쌓이는 지표가 아니라 **문턱값형(all-or-nothing)** 지표라,
+      코호트 전체가 실제로 1년을 채우기 전까지는 도달률이 0%에 머물다가
+      한꺼번에 뛴다. 이런 지표에 선형 보정을 적용하면 항상 과소추정된
+      값(대개 0%)이 나와 의미가 없다. 억지로 다른 보정 공식을 새로 만들지
+      않고, 보정 자체를 뺐다(판단기준.md 참고).
+
+    ★ 표본이 C.MIN_SAMPLE 미만인 코호트는 trust_check()에 걸려 판정하지
+      않는다 — 사유만 있고 도달률·관측커버리지 수치는 화면에서 뺀다
+      (pages/2_대시보드.py가 funnel_by() 분해 표에 이미 쓰는 것과 같은
+      마스킹 방식).
+
+    판정:
+        무효      trust_check() 표본부족
+        관측부족  관측커버리지<100 — 좋다/나쁘다 방향 없이 "아직 판단하기엔
+                  이르다"는 사실만 표시한다
+        (빈 문자열) 관측커버리지=100·표본 충분 — 실측 도달률을 판정 없이
+                  그대로 보여준다(보정도 비교 대상도 없으니 색을 넣지 않는다)
+
+    반환: {"recent": DataFrame(최근 RECENT_COHORT_MONTHS개 코호트),
+           "reach_step": str, "need_years": float}
+    """
+    e, snapshot = _cohort_frame(emp, sep)
+
+    reach_step = C.FUNNEL_STEPS[1]
+    need_years = FUNNEL_STEP_YEARS[reach_step]
+    need_days = need_years * 365.25
+
+    rows = []
+    for co, g in e.groupby("코호트", observed=True):
+        cohort_start = co.to_timestamp()
+        elapsed_days = max((snapshot - cohort_start).days, 0)
+        coverage = min(elapsed_days / need_days, 1.0) * 100
+        reached, raw_rate = _reach_rate(g, "종료일", need_years)
+        rows.append({
+            "코호트": str(co), "코호트_ts": cohort_start, "n": len(g),
+            "도달": reached, "도달률": raw_rate, "관측커버리지": coverage,
+        })
+    full = pd.DataFrame(rows).sort_values("코호트_ts").reset_index(drop=True)
+    recent = full.tail(RECENT_COHORT_MONTHS).copy()
+
+    verdicts, reasons, colors = [], [], []
+    for _, row in recent.iterrows():
+        reason = trust_check({"ok": True}, int(row["n"]))
+        if reason:
+            verdicts.append("무효"); reasons.append(reason)
+            colors.append(C.COLORS["block"])
+        elif row["관측커버리지"] < 100 - 1e-9:
+            verdicts.append("관측부족")
+            reasons.append("아직 판단하기엔 이르다")
+            colors.append(C.COLORS["none"])
+        else:
+            verdicts.append(""); reasons.append(""); colors.append(None)
+    recent["판정"] = verdicts
+    recent["사유"] = reasons
+    recent["색"] = colors
+
+    return {"recent": recent, "reach_step": reach_step, "need_years": need_years}
+
+
 # ── 유지 퍼널 ─────────────────────────────────────────────────────
 # config.RETENTION_STEPS 의 단계 -> 요구되는 최소 연속 개월 수.
 RETENTION_STEP_MONTHS = {"상위진입": 1, "2개월연속": 2, "3개월연속": 3}
