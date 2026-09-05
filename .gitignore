@@ -4,4 +4,8 @@ runs/*.json
 .streamlit/secrets.toml
 .venv/
 venv/
-data/
+data/*
+!data/HR_직원.csv
+!data/HR_근태.csv
+!data/HR_퇴사이력.csv
+!data/HR_평가.csv
