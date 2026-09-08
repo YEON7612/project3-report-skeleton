@@ -92,6 +92,12 @@ if k:
     # 스파크라인이 없는 카드는 같은 높이(44px)의 빈 자리로 채운다 — 네 칸
     # 다 "값+델타 / 스파크라인 자리"라는 같은 구조를 갖게 한다.
     EMPTY_SPARK = '<div style="height:44px"></div>'
+    # st.metric은 델타가 없으면 델타 배지(22px) + 여백만큼 블록 자체가
+    # 짧아진다(DOM 실측: 델타 있음 102px, 없음 76px — 차이 26px). 이 차이를
+    # 그대로 두면 델타 없는 카드의 스파크라인이 다른 카드보다 26px 위에서
+    # 시작한다 — 차트 자체(height=44, margin 전부 0)는 네 카드 다 동일하니
+    # 범인이 아니다. 델타 자리만큼 빈 여백을 넣어 메트릭 블록 높이를 맞춘다.
+    DELTA_SPACER = '<div style="height:26px"></div>'
 
     cols = st.columns(len(KPI_CARDS))
     for col, name in zip(cols, KPI_CARDS):
@@ -106,6 +112,8 @@ if k:
                 delta_color = "inverse" if name in HIGHER_IS_WORSE else "normal"
             st.metric(name, v["fmt"].format(v["value"]), delta,
                       delta_color=delta_color, help=HELP_TEXT.get(name))
+            if delta is None:
+                st.markdown(DELTA_SPACER, unsafe_allow_html=True)
 
             # 스파크라인 자리 — 그릴 데이터가 있으면 차트, 없으면 같은
             # 높이의 빈 자리.
