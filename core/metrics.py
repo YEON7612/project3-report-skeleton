@@ -352,6 +352,30 @@ def _eval_score_by_emp(ev: pd.DataFrame) -> pd.Series:
     return s.groupby(ev["사번"], observed=True).mean()
 
 
+@st.cache_data(show_spinner=False)
+def quarterly_eval_score(t: dict) -> pd.Series:
+    """평균평가점수의 분기별 추이. HR_평가가 분기 단위라 monthly()에 못 넣고
+    따로 낸다(monthly() docstring과 같은 이유).
+
+    kpis()의 "평균평가점수"와 모집단은 같다 — 지금 재직 중인 사번만. 다만
+    kpis()는 그 사번들의 4개 분기 점수를 전부 평균해 **하나의 값**으로
+    합치고, 이 함수는 분기마다 따로 평균 낸다 — 그래서 kpis() 값과 이
+    시리즈의 마지막 분기 값이 다를 수 있다(둘 다 맞다, 합치는 범위가 다를
+    뿐이다 — 월평균초과근무시간을 "전체기간 평균"과 "이번 달"로 갈랐던 것과
+    같은 문제라, 화면에서 대시보드 카드 값(4분기 통합)과 스파크라인(분기별)이
+    서로 다른 것을 잰다는 점을 캡션에 밝힌다).
+
+    반환: 인덱스가 분기("2025Q1" 등), 값이 그 분기 평균점수인 Series
+    """
+    emp = t["HR_직원"]
+    active_ids = emp.loc[emp["재직상태"] == "재직", "사번"]
+    ev = t["HR_평가"]
+    ev_active = ev[ev["사번"].isin(active_ids)].copy()
+    ev_active["점수"] = ev_active["평가등급"].map(GRADE_SCORE).astype(float)
+    return (ev_active.groupby("분기", observed=True)["점수"]
+            .mean().sort_index())
+
+
 # ── KPI ───────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def kpis(t: dict) -> dict:

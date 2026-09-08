@@ -69,20 +69,51 @@ if k:
     # 늘어난 게 나쁜 신호인 지표는 delta_color="inverse"로 화살표 색을 뒤집는다
     # (예: 이탈률이 늘면 나쁜 것이므로 양수 delta를 빨강으로 보여줘야 한다).
     HIGHER_IS_WORSE = {"입사1년내이탈률", "월평균초과근무시간"}
+    # 평균평가점수는 monthly()에 없다(HR_평가가 분기 단위) — 별도 분기별
+    # 시리즈를 재사용한다. quarterly_eval_score() 값은 kpis()의 "4개 분기
+    # 통합 평균"과는 합산 범위가 달라(분기별 vs 통합) 델타 화살표는 안
+    # 붙인다 — 카드 숫자가 움직인 것처럼 보이면 안 되기 때문이다. 추이
+    # 모양만 스파크라인으로 보여준다.
+    quarterly_score = ui.guard(M.quarterly_eval_score, t)
     cols = st.columns(len(KPI_CARDS))
     for col, name in zip(cols, KPI_CARDS):
         v = k[name]
         with col:
             lv = M.status_of(name, v["value"])
             delta, delta_color = None, "normal"
-            if m is not None and name in getattr(m, "columns", []) and len(m) >= 2:
+            if (name != "평균평가점수" and m is not None
+                    and name in getattr(m, "columns", []) and len(m) >= 2):
                 diff = m[name].iloc[-1] - m[name].iloc[-2]
                 delta = v["fmt"].replace("{:", "{:+", 1).format(diff)
                 delta_color = "inverse" if name in HIGHER_IS_WORSE else "normal"
             st.metric(name, v["fmt"].format(v["value"]), delta,
                       delta_color=delta_color)
             # 추이가 있으면 스파크라인. 지표 이름과 열 이름이 같아야 그려진다.
-            if m is not None and name in getattr(m, "columns", []):
+            if name == "평균평가점수":
+                if quarterly_score is not None and len(quarterly_score) >= 2:
+                    st.plotly_chart(
+                        charts.spark(quarterly_score,
+                                    C.COLORS[lv] if lv != "ok" else None),
+                        width="stretch", config={"displayModeBar": False},
+                        key=f"sp_{name}")
+                st.caption(
+                    "재직자 269명의 평가등급(S~D, 5단계)을 5~1점으로 환산해 "
+                    "사번별 평균의 평균 · 5점 만점 · 응답률 100%(재직자 전원 "
+                    "분기별 평가 기록 보유, 결측 없음) · 스파크라인은 분기별"
+                    "(2025Q1~Q4) 평균이라 위 카드 값(4분기 통합)과는 다를 수 "
+                    "있습니다.")
+            elif name == "입사1년내이탈률":
+                if m is not None and name in getattr(m, "columns", []):
+                    st.plotly_chart(
+                        charts.spark(m[name], C.COLORS[lv] if lv != "ok" else None),
+                        width="stretch", config={"displayModeBar": False},
+                        key=f"sp_{name}")
+                else:
+                    st.caption(
+                        "월별 추이 없음 — KM 생존함수를 매달 다시 적합해야 "
+                        "해서(monthly() docstring 참고) 신중한 검증 없이는 "
+                        "만들지 않았습니다(core/todo.py 백로그 참고).")
+            elif m is not None and name in getattr(m, "columns", []):
                 st.plotly_chart(
                     charts.spark(m[name], C.COLORS[lv] if lv != "ok" else None),
                     width="stretch", config={"displayModeBar": False},
