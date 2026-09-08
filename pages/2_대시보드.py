@@ -75,6 +75,24 @@ if k:
     # 붙인다 — 카드 숫자가 움직인 것처럼 보이면 안 되기 때문이다. 추이
     # 모양만 스파크라인으로 보여준다.
     quarterly_score = ui.guard(M.quarterly_eval_score, t)
+
+    # 카드 아래 길게 늘어지던 설명 문단을 help= 툴팁(ⓘ 아이콘)으로 옮긴다 —
+    # 카드마다 설명 길이가 달라 높이가 들쭉날쭉해지던 문제를 없앤다.
+    HELP_TEXT = {
+        "입사1년내이탈률": (
+            "월별 추이 없음 — KM 생존함수를 매달 다시 적합해야 해서"
+            "(monthly() docstring 참고) 신중한 검증 없이는 만들지 않았습니다"
+            "(core/todo.py 백로그 참고)."),
+        "평균평가점수": (
+            "재직자 269명의 평가등급(S~D, 5단계)을 5~1점으로 환산해 사번별 "
+            "평균의 평균 · 5점 만점 · 응답률 100%(재직자 전원 분기별 평가 "
+            "기록 보유, 결측 없음) · 스파크라인은 분기별(2025Q1~Q4) 평균이라 "
+            "위 카드 값(4분기 통합)과는 다를 수 있습니다."),
+    }
+    # 스파크라인이 없는 카드는 같은 높이(44px)의 빈 자리로 채운다 — 네 칸
+    # 다 "값+델타 / 스파크라인 자리"라는 같은 구조를 갖게 한다.
+    EMPTY_SPARK = '<div style="height:44px"></div>'
+
     cols = st.columns(len(KPI_CARDS))
     for col, name in zip(cols, KPI_CARDS):
         v = k[name]
@@ -87,37 +105,26 @@ if k:
                 delta = v["fmt"].replace("{:", "{:+", 1).format(diff)
                 delta_color = "inverse" if name in HIGHER_IS_WORSE else "normal"
             st.metric(name, v["fmt"].format(v["value"]), delta,
-                      delta_color=delta_color)
-            # 추이가 있으면 스파크라인. 지표 이름과 열 이름이 같아야 그려진다.
+                      delta_color=delta_color, help=HELP_TEXT.get(name))
+
+            # 스파크라인 자리 — 그릴 데이터가 있으면 차트, 없으면 같은
+            # 높이의 빈 자리.
             if name == "평균평가점수":
-                if quarterly_score is not None and len(quarterly_score) >= 2:
-                    st.plotly_chart(
-                        charts.spark(quarterly_score,
-                                    C.COLORS[lv] if lv != "ok" else None),
-                        width="stretch", config={"displayModeBar": False},
-                        key=f"sp_{name}")
-                st.caption(
-                    "재직자 269명의 평가등급(S~D, 5단계)을 5~1점으로 환산해 "
-                    "사번별 평균의 평균 · 5점 만점 · 응답률 100%(재직자 전원 "
-                    "분기별 평가 기록 보유, 결측 없음) · 스파크라인은 분기별"
-                    "(2025Q1~Q4) 평균이라 위 카드 값(4분기 통합)과는 다를 수 "
-                    "있습니다.")
-            elif name == "입사1년내이탈률":
-                if m is not None and name in getattr(m, "columns", []):
-                    st.plotly_chart(
-                        charts.spark(m[name], C.COLORS[lv] if lv != "ok" else None),
-                        width="stretch", config={"displayModeBar": False},
-                        key=f"sp_{name}")
-                else:
-                    st.caption(
-                        "월별 추이 없음 — KM 생존함수를 매달 다시 적합해야 "
-                        "해서(monthly() docstring 참고) 신중한 검증 없이는 "
-                        "만들지 않았습니다(core/todo.py 백로그 참고).")
+                series = (quarterly_score
+                          if quarterly_score is not None
+                          and len(quarterly_score) >= 2 else None)
             elif m is not None and name in getattr(m, "columns", []):
+                series = m[name]
+            else:
+                series = None
+
+            if series is not None:
                 st.plotly_chart(
-                    charts.spark(m[name], C.COLORS[lv] if lv != "ok" else None),
+                    charts.spark(series, C.COLORS[lv] if lv != "ok" else None),
                     width="stretch", config={"displayModeBar": False},
                     key=f"sp_{name}")
+            else:
+                st.markdown(EMPTY_SPARK, unsafe_allow_html=True)
     if not C.THRESHOLDS:
         st.caption("config.THRESHOLDS 가 비어 있어 전부 정상으로 표시됩니다. "
                    "임계값을 채우면 색이 갈립니다.")
