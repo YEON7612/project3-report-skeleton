@@ -411,11 +411,8 @@ with tab_acq:
     if f is not None:
         bn = f[f.is_bottleneck].iloc[0]
         bi = max(int(f.index[f.label == bn.label][0]), 1)
-        left, right = st.columns([1.15, 1])
-        with left:
-            _render_acquisition_funnel(f)
-        with right:
-            _render_decomposition(t, f, bi)
+        _render_acquisition_funnel(f)
+        _render_decomposition(t, f, bi)
 with tab_ret:
     ui.section("유지 퍼널", "데려온 대상이 남는가")
     _render_retention_funnel(t)
