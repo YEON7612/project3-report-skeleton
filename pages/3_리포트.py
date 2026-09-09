@@ -356,9 +356,42 @@ with tab_proposal:
                 else:
                     st.caption("✓ 인과 단정 표현 검사 통과")
 
+        # ── 내보내기 ──────────────────────────────────────────────────
         st.divider()
-        st.markdown("**HTML로 내보내기** — 제안서_템플릿.html 구조 그대로, 채우지 못한 "
-                    "자리는 본문에 표시된 대로 todo로 남습니다.")
-        st.download_button(
-            "제안서.html 다운로드", PR.to_html(psecs),
-            file_name="제안서.html", mime="text/html")
+        ui.section("내보내기")
+
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            st.markdown("**PDF** — 표지 · 목차 포함")
+            if st.button("PDF 만들기", type="primary", key="proposal_pdf_btn"):
+                made = False
+                with st.status("제안서를 만드는 중", expanded=True) as box:
+                    try:
+                        st.write("1) 절 내용 모으는 중")
+                        st.write("2) PDF 조립하는 중")
+                        pdf = PR.to_pdf(psecs)
+                    except Exception as e:
+                        box.update(label="실패", state="error")
+                        st.error(f"제안서 생성 실패: {e}")
+                    else:
+                        st.session_state.proposal_pdf = pdf
+                        st.session_state.proposal_pdf_made_at = datetime.now().strftime(
+                            "%Y%m%d_%H%M%S")
+                        box.update(label="완성", state="complete", expanded=False)
+                        made = True
+
+                if made:
+                    st.toast("제안서가 만들어졌습니다", icon="📄")
+            if st.session_state.get("proposal_pdf"):
+                made_at = st.session_state.get("proposal_pdf_made_at", "")
+                st.download_button(
+                    "PDF 내려받기", st.session_state.proposal_pdf,
+                    file_name=f"제안서_{made_at}.pdf",
+                    mime="application/pdf", key="proposal_pdf_dl")
+
+        with pc2:
+            st.markdown("**HTML** — 제안서_템플릿.html 구조 그대로, 채우지 못한 "
+                        "자리는 본문에 표시된 대로 todo로 남습니다.")
+            st.download_button(
+                "제안서.html 다운로드", PR.to_html(psecs),
+                file_name="제안서.html", mime="text/html", key="proposal_html_dl")

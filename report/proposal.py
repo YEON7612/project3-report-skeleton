@@ -14,6 +14,7 @@ import html as _html
 import re
 
 from report.sections import BANNED, check_phrasing
+from report.to_pdf import build_pdf as _build_pdf
 
 CLASSES = ["하지 말 것", "다시 할 것", "할 것"]
 
@@ -615,3 +616,14 @@ def to_html(secs: list[dict]) -> str:
 </body>
 </html>
 """
+
+
+def to_pdf(secs: list[dict]) -> bytes:
+    """제안 리포트를 PDF로 만든다. report/to_pdf.py의 build_pdf()를 그대로
+    재사용한다 — 새로 만들지 않는다. build_pdf()가 받는 sections 계약
+    ({"title","kind","body","placeholder"(선택)})을 secs가 이미 그대로
+    만족하므로 그냥 넘긴다. charts는 없다 — 제안 리포트는 카드 텍스트
+    중심이라 sections.py의 리포트처럼 별도 차트 이미지를 붙이지 않는다.
+    표지 제목만 "제안서"로 다르게 준다.
+    """
+    return _build_pdf(secs, charts={}, title="제안서")
