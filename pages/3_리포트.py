@@ -355,3 +355,10 @@ with tab_proposal:
                                f"<b>{', '.join(psec['phrasing_flags'])}</b>.")
                 else:
                     st.caption("✓ 인과 단정 표현 검사 통과")
+
+        st.divider()
+        st.markdown("**HTML로 내보내기** — 제안서_템플릿.html 구조 그대로, 채우지 못한 "
+                    "자리는 본문에 표시된 대로 todo로 남습니다.")
+        st.download_button(
+            "제안서.html 다운로드", PR.to_html(psecs),
+            file_name="제안서.html", mime="text/html")
