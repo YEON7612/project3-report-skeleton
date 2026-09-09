@@ -3,14 +3,24 @@
 
 자동: 한 장 요약·하지 말 것·다시 할 것·할 것·부록(근거 상세)
       — 전부 제안카드.md에 이미 적힌 값을 그대로 옮길 뿐 새로 판단하지 않는다.
-사람: 이 제안이 틀린다면·적용 — 반증 종합과 실제로 무엇을 고를지는 사람이
-      정한다. 여기서 대신 판단하지 않는다.
+사람: 이 제안이 틀린다면·적용 — 반증 종합과 다음에 무엇을 볼지는 사람이
+      정한다. 여기서 대신 판단하지 않는다. "적용"은 판단기준.md의 최근
+      "오늘 내가 내린 결정" 문장을 읽기 전용 후보로 먼저 보여주지만, 그
+      후보 중 무엇을 참고할지 고르고 다음에 볼 것을 쓰는 것은 사람이 한다.
 """
 from __future__ import annotations
+
+import re
 
 from report.sections import BANNED, check_phrasing
 
 CLASSES = ["하지 말 것", "다시 할 것", "할 것"]
+
+# 판단기준.md의 "### 오늘 ~ 결정/판단" 절 헤더. 문서마다 "오늘 내가 실제로
+# 내린 결정" · "오늘 실제로 내린 판단" · "오늘 내린 결정"처럼 표현이 조금씩
+# 다르지만 전부 "오늘"과 "결정"/"판단"을 담고 있어 이 둘로만 잡는다.
+_DECISION_HEADER = re.compile(r"^###\s*오늘.*?(?:결정|판단).*$", re.MULTILINE)
+_BULLET = re.compile(r"^-\s+(.+)$", re.MULTILINE)
 
 
 def _card_lines(c: dict) -> list[str]:
@@ -106,6 +116,25 @@ def _s_class(cards: dict, cls: str) -> dict:
     return {"title": cls, "kind": "auto", "body": body}
 
 
+def _recent_decisions(judgment_text: str) -> list[str]:
+    """판단기준.md에서 가장 최근 "오늘 ~ 결정/판단" 절의 불릿만 뽑는다.
+
+    여러 날짜의 절을 다 모으지 않고 **가장 최근 절 하나만** 쓴다 — "오늘"은
+    그 절이 쓰인 날 하루를 가리키는 말이라, 여러 날짜를 섞으면 다른 날의
+    "오늘"이 뒤섞여 더 이상 오늘이 아니게 된다. 문장은 원문 그대로 옮긴다 —
+    요약하거나 새로 쓰지 않는다.
+    """
+    headers = list(_DECISION_HEADER.finditer(judgment_text))
+    if not headers:
+        return []
+    last = headers[-1]
+    start = last.end()
+    next_header = re.search(r"^#{2,3}\s", judgment_text[start:], re.MULTILINE)
+    end = start + next_header.start() if next_header else len(judgment_text)
+    block = judgment_text[start:end]
+    return [m.group(1).strip() for m in _BULLET.finditer(block)]
+
+
 def _s_falsification(human: dict) -> dict:
     """이 제안이 틀린다면. 사람이 쓴다 — "적용"과 같은 패턴이다.
 
@@ -122,14 +151,21 @@ def _s_falsification(human: dict) -> dict:
     }
 
 
-def _s_application(human: dict) -> dict:
-    """적용. "할 것" 중 실제로 무엇을 고를지는 사람이 쓴다 — 자동 조립하지 않는다."""
+def _s_application(human: dict, judgment_text: str = "") -> dict:
+    """적용. kind는 human이지만 판단기준.md의 가장 최근 "오늘 내가 내린
+    결정" 문장을 참고 후보로 먼저 자동으로 보여준다 — 후보는 여기서도
+    화면에서도 읽기 전용이다(고치지 않고 그대로 옮긴 값이라 편집 대상이
+    아니다). 사람이 실제로 쓰는 건 그 후보를 보고 "다음에 무엇을 볼
+    것인가" 한 가지뿐이다 — 후보 중 무엇을 참고할지 고르는 것과, 다음에
+    볼 것을 쓰는 것만 사람이 한다.
+    """
     return {
         "title": "적용", "kind": "human",
+        "candidates": _recent_decisions(judgment_text),
         "body": human.get("적용", ""),
         "placeholder": (
-            "\"할 것\" 후보 중 이번에 실제로 무엇을 적용하기로 했는지 적으십시오. "
-            "전부 고를 필요는 없고, 순서를 바꿔도 됩니다 — 선택은 사람이 합니다."),
+            "위 후보(오늘 내가 내린 결정)를 참고해, 다음에 무엇을 볼 것인지 "
+            "적으십시오."),
     }
 
 
@@ -152,7 +188,7 @@ def _s_appendix(cards: dict) -> dict:
 
 
 # ── 조립 ──────────────────────────────────────────────────────────
-def build(cards: dict, human: dict | None = None) -> list[dict]:
+def build(cards: dict, human: dict | None = None, judgment_text: str = "") -> list[dict]:
     """제안 리포트 7절을 조립한다. cards는 my-report/제안카드.md를 파싱한 딕셔너리.
 
     cards 형태: {"cards": [{"제목", "분류", "근거", "비용", "효과", "되돌림",
@@ -168,13 +204,24 @@ def build(cards: dict, human: dict | None = None) -> list[dict]:
     cards는 보통 report.card_parser.parse_file("my-report/제안카드.md")의
     결과를 그대로 넣는다.
 
+    judgment_text는 판단기준.md 원문 텍스트(호출하는 쪽이 읽어서 넘긴다 —
+    여기서는 파일을 직접 읽지 않는다). "적용" 절의 후보 목록(candidates)을
+    뽑는 데만 쓴다. 안 넘기면(빈 문자열) 후보 없이 빈 목록으로 나온다.
+
     **순서와 자동/사람 구분은 바꾸지 않는다**(sections.py의 build()와 같은 규칙).
     한 장 요약 → 하지 말 것 → 다시 할 것 → 할 것 → 이 제안이 틀린다면 → 적용 → 부록.
+
+    "적용" 절은 kind가 human이지만 "candidates"(판단기준.md 최근 절의 "오늘
+    내가 내린 결정" 문장 — 읽기 전용) 키를 함께 돌려준다. 화면은 이 후보를
+    편집 UI 없이 그대로 보여주고, 사람은 그 아래에 "다음에 무엇을 볼
+    것인가"만 쓴다.
 
     check_phrasing()은 sections.py 것을 그대로 재사용한다 — 여기서 새로 만들지
     않는다. 자동 절뿐 아니라 사람이 쓰는 "이 제안이 틀린다면"·"적용" 절에도
     반드시 걸어, 걸린 절은 "phrasing_flags"에 걸린 단어를 담아 돌려준다(화면
     경고용, 값은 그대로 둔다 — 걸려도 저장은 한다는 원칙은 sections.py와 같다).
+    candidates는 판단기준.md에서 그대로 옮긴 과거 기록이라 이 검사 대상이
+    아니다 — body(사람이 지금 쓴 문장)만 검사한다.
     """
     human = human or {}
     sections = [
@@ -183,7 +230,7 @@ def build(cards: dict, human: dict | None = None) -> list[dict]:
         _s_class(cards, "다시 할 것"),
         _s_class(cards, "할 것"),
         _s_falsification(human),
-        _s_application(human),
+        _s_application(human, judgment_text),
         _s_appendix(cards),
     ]
     for sec in sections:
