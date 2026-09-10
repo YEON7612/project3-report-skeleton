@@ -142,8 +142,8 @@ if k:
 # 한다. 다만 분해 축·구간 필터는 fragment 밖에 둔다 — st.query_params를
 # fragment 안에서 갱신하면 부분 재실행이라 브라우저 주소창과 화면이
 # 어긋날 수 있기 때문이다(_render_decomposition() 참고).
-DIMS = ["부서", "직급", "채용경로"]  # 손을 쓸 수 있는 것만 — 식별자·날짜·
-                                    # 재직상태(퍼널의 결과 그 자체)는 뺐다.
+DIMS = C.FUNNEL_DIMS  # config.py로 옮김 — 대시보드·리포트·제안 후보가 같은 축을 쓴다.
+# 이유는 config.FUNNEL_DIMS 주석 참고
 
 
 @st.fragment

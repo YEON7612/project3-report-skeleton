@@ -561,6 +561,468 @@ def status_of(name: str, value: float) -> str:
             else "warn" if value < th["경고"] else "ok")
 
 
+# ── 제안 주제 후보 ────────────────────────────────────────────────
+# 추세(④)에서 "최근 N개월 평균 vs 직전 N개월"의 N. RECENT_COHORT_MONTHS와
+# 같은 성격의 그레인 선택이라 config가 아니라 여기 둔다 — monthly()가
+# 15개월치(config.PERIOD)라 3(분기 단위)을 써도 비교에 6개월만 쓰고 9개월치
+# 여유가 남는다. monthly_verdict()가 이미 하는 "전월 대비"(1개월) 비교와는
+# 다른, 더 완만한 추세를 보려는 목적이라 1이 아니라 3으로 뒀다.
+TREND_WINDOW_MONTHS = 3
+
+
+def _swing_pp(n: int) -> float:
+    """표본 n에서 1건이 바뀔 때 흔들리는 폭(%p) = 100/n. 새 공식이 아니다 —
+    판단기준.md(2026-09-08) "표본 한 건이 바뀌면 얼마나 흔들리는가"를 그대로
+    쓴다. n이 0이면 비교 자체가 안 되므로 무한대를 돌려준다(항상 기각).
+    """
+    return 100.0 / n if n else float("inf")
+
+
+def _period_years() -> float:
+    """config.PERIOD 길이(년). 여기서만 계산하고 datetime.now()는 쓰지
+    않는다 — 앱을 언제 켜도 같은 값이 나와야 한다."""
+    start, end = pd.Timestamp(C.PERIOD[0]), pd.Timestamp(C.PERIOD[1])
+    return (end - start).days / 365.25
+
+
+def _topic_funnel_gaps(f: pd.DataFrame, key: str, label: str,
+                        n_total: int, years: float) -> list[dict]:
+    """퍼널 하나(f) 안에서 "전환율이 가장 낮은 구간 vs 그다음으로 낮은
+    구간"의 격차 후보 하나를 만든다. trust_check()에 걸리는 구간은 비교
+    대상에서 아예 뺀다(못 믿을 조건 — 후보 자체를 안 만든다). 남은 구간이
+    2개 미만이면 비교할 게 없어 후보가 없다.
+    """
+    ranked = f[f["step_rate"].notna()].copy()
+    ranked["_못믿음"] = ranked["n"].apply(
+        lambda n: trust_check({"ok": True}, int(n)) is not None)
+    ranked = ranked[~ranked["_못믿음"]].sort_values("step_rate")
+    if len(ranked) < 2:
+        return []
+
+    worst, second = ranked.iloc[0], ranked.iloc[1]
+    gap_frac = float(second["step_rate"] - worst["step_rate"])
+    gap_pp = gap_frac * 100
+    비중 = float(worst["drop"]) / n_total if n_total else 0.0
+    raw_count = float(worst["drop"])
+    연간_건수 = raw_count / years if years else 0.0
+    규모 = gap_frac * 비중 * 연간_건수
+
+    prev_idx = f.index.get_loc(worst.name) - 1
+    구간 = (f"{f['step'].iloc[prev_idx]}→{worst['step']}"
+           if prev_idx >= 0 else str(worst["step"]))
+
+    swing = _swing_pp(int(worst["n"]))
+    기각 = (f"흔들림 ±{swing:.2f}%p ≥ 격차 {gap_pp:.2f}%p(표본 {int(worst['n'])}건)"
+          if gap_pp < swing else "")
+
+    return [{
+        "키": f"funnel_gap:{key}:{worst['step']}",
+        "제목": f"{label} '{worst['label']}' 구간 전환율이 가장 낮다",
+        "한줄": (f"{label} 단계 전환율: {worst['label']} {worst['step_rate']*100:.2f}% "
+               f"vs 다음으로 낮은 {second['label']} {second['step_rate']*100:.2f}% "
+               f"— 격차 {gap_pp:.2f}%p. 이 구간 감소 {int(worst['drop']):,}명"
+               f"(전체 {n_total:,}명의 {비중*100:.1f}%)"),
+        "규모_연간건수": 규모,
+        "근거축": None,
+        "구간": 구간,
+        "기각사유": 기각,
+    }]
+
+
+def _topic_axis_gaps(emp: pd.DataFrame, sep: pd.DataFrame, step_from: str,
+                      step_to: str, n_total: int, years: float) -> list[dict]:
+    """config.FUNNEL_DIMS 각 축에서 "전환율 최고 칸 vs 최저 칸"의 격차
+    후보를 축마다 하나씩 만든다. 구간은 획득 퍼널의 병목 구간(다른 화면·
+    리포트가 이미 쓰는 것과 같은 구간)으로 고정한다 — 매번 다른 구간을
+    보면 화면마다 숫자가 어긋난다.
+
+    trust_check()에 걸리는 칸은 최고/최저 후보에서 뺀다. 기각 여부는 그
+    축에서 가장 표본이 작은(가장 흔들리기 쉬운) 칸 기준으로 본다 —
+    제안카드.md 제안8에서 쓴 것과 같은 축 전체 최악의 경우 검사다.
+    """
+    out = []
+    for dim in C.FUNNEL_DIMS:
+        g = funnel_by(emp, sep, dim, step_from, step_to)
+        g = g.copy()
+        g["_못믿음"] = g["도달"].apply(
+            lambda n: trust_check({"ok": True}, int(n)) is not None)
+        trustworthy = g[~g["_못믿음"]]
+        if len(trustworthy) < 2:
+            continue
+
+        best = trustworthy.loc[trustworthy["전환율"].idxmax()]
+        worst = trustworthy.loc[trustworthy["전환율"].idxmin()]
+        if best[dim] == worst[dim]:
+            continue
+        gap_frac = float(best["전환율"] - worst["전환율"])
+        gap_pp = gap_frac * 100
+        비중 = float(worst["비중"])
+        raw_count = float(worst["도달"])
+        연간_건수 = raw_count / years if years else 0.0
+        규모 = gap_frac * 비중 * 연간_건수
+
+        min_n = int(trustworthy["도달"].min())
+        swing = _swing_pp(min_n)
+        기각 = (f"흔들림 ±{swing:.2f}%p ≥ 격차 {gap_pp:.2f}%p"
+              f"(축 최소 표본 {min_n}건 기준)" if gap_pp < swing else "")
+
+        out.append({
+            "키": f"axis_gap:{dim}:{step_from}->{step_to}",
+            "제목": f"'{dim}' 축, {step_from}→{step_to} 전환율 격차",
+            "한줄": (f"{dim} 축 {step_from}→{step_to} 구간: {best[dim]} "
+                   f"{best['전환율']*100:.2f}% vs {worst[dim]} "
+                   f"{worst['전환율']*100:.2f}% — 격차 {gap_pp:.2f}%p. "
+                   f"비중 축 전체의 {비중*100:.1f}%({int(worst['도달'])}명)"),
+            "규모_연간건수": 규모,
+            "근거축": dim,
+            "구간": f"{step_from}→{step_to}",
+            "기각사유": 기각,
+        })
+    return out
+
+
+def _topic_threshold_breaches(t: dict, years: float) -> list[dict]:
+    """config.THRESHOLDS 를 벗어난 지표를 후보로 만든다. 새 임계값을 만들지
+    않는다 — status_of()가 이미 쓰는 그 THRESHOLDS를 그대로 재사용한다.
+    벗어나지 않은 지표는 후보 자체를 만들지 않는다("기각"이 아니라 해당
+    없음 — 실제 위반이 있어야 후보다).
+    """
+    emp = t["HR_직원"]
+    n_total = int(len(emp))
+    if trust_check({"ok": True}, n_total):
+        return []  # 전체 표본 자체를 못 믿으면 후보를 만들지 않는다.
+
+    n_active = int((emp["재직상태"] == "재직").sum())
+    k = kpis(t)
+    out = []
+    for name, th in C.THRESHOLDS.items():
+        row = k.get(name)
+        if row is None:
+            continue
+        value = float(row["value"])
+        status = status_of(name, value)
+        if status == "ok":
+            continue
+
+        boundary_key = "위험" if status == "block" else "경고"
+        boundary = th[boundary_key]
+        gap_frac = abs(value - boundary) / boundary if boundary else 0.0
+        raw_count = float(n_active)
+        연간_건수 = raw_count / years if years else 0.0
+        규모 = gap_frac * 1.0 * 연간_건수  # 비중 1.0 — 조직 전체 집계값이라 축 분해가 없다.
+
+        out.append({
+            "키": f"threshold:{name}",
+            "제목": f"'{name}'가 {boundary_key} 기준을 벗어났다",
+            "한줄": (f"{name} {value:.2f}{row['unit']} — {boundary_key} 기준 "
+                   f"{boundary:.2f}{row['unit']} 대비 {gap_frac*100:.1f}% 초과"),
+            "규모_연간건수": 규모,
+            "근거축": None,
+            "구간": status,
+            "기각사유": "",  # 실제 임계값 위반이라 격차 크기로 기각하지 않는다.
+        })
+    return out
+
+
+def _topic_trend_drops(t: dict, years: float) -> list[dict]:
+    """monthly()의 각 지표에서 "최근 TREND_WINDOW_MONTHS개월 평균이 직전
+    TREND_WINDOW_MONTHS개월 평균보다 낮은" 것을 후보로 만든다. 방향(좋다/
+    나쁘다)은 안 따진다 — 추세 자체가 후보다.
+
+    기각 기준은 새로 만들지 않는다 — monthly_verdict()가 이미 쓰는
+    PRIMARY_MOVE_PCT(재직인원)·GUARDRAIL_MOVE_PCT(월평균초과근무시간)를
+    "의미 있는 변화"의 문턱으로 빌려 쓴다. monthly()에 있는 두 지표가
+    정확히 그 둘이라 전부 커버된다.
+    """
+    n_total = int(len(t["HR_직원"]))
+    if trust_check({"ok": True}, n_total):
+        return []
+
+    m = monthly(t)
+    n_active = int((t["HR_직원"]["재직상태"] == "재직").sum())
+    move_pct = {C.PRIMARY_METRIC: C.PRIMARY_MOVE_PCT,
+                C.GUARDRAIL_METRIC: C.GUARDRAIL_MOVE_PCT}
+
+    out = []
+    N = TREND_WINDOW_MONTHS
+    if len(m) < 2 * N:
+        return []  # 비교할 만큼 개월 수가 안 쌓였다.
+
+    for col in m.columns:
+        recent = m[col].iloc[-N:].mean()
+        prev = m[col].iloc[-2 * N:-N].mean()
+        if not (recent < prev):
+            continue  # 떨어진 지표만 후보다.
+
+        gap = float(prev - recent)
+        gap_frac = gap / prev if prev else 0.0
+        raw_count = float(n_active)
+        연간_건수 = raw_count / years if years else 0.0
+        규모 = gap_frac * 1.0 * 연간_건수
+
+        th_pct = move_pct.get(col)
+        기각 = ""
+        if th_pct is not None and gap_frac * 100 < th_pct:
+            기각 = (f"{gap_frac*100:.1f}% 하락 < 판단기준 {th_pct:.0f}%"
+                  f"({'PRIMARY_MOVE_PCT' if col == C.PRIMARY_METRIC else 'GUARDRAIL_MOVE_PCT'})")
+
+        out.append({
+            "키": f"trend:{col}",
+            "제목": f"'{col}' 최근 {N}개월 평균이 직전 {N}개월보다 낮다",
+            "한줄": (f"{col} 최근 {N}개월 평균 {recent:.2f} vs 직전 {N}개월 평균 "
+                   f"{prev:.2f} ({-gap_frac*100:+.1f}%)"),
+            "규모_연간건수": 규모,
+            "근거축": None,
+            "구간": f"최근{N}개월 vs 직전{N}개월",
+            "기각사유": 기각,
+        })
+    return out
+
+
+@st.cache_data(show_spinner=False)
+def proposal_topics(t: dict) -> list[dict]:
+    """제안서 주제 후보를 가능한 만큼 뽑는다. 하나만 고르지 않는다.
+
+    넷에서 뽑는다: ① 퍼널 구간(전환율 최저 vs 그다음 최저 구간 격차,
+    획득·유지 퍼널 각각) ② config.FUNNEL_DIMS 각 축의 전환율 최고 vs
+    최저 칸 격차(구간은 획득 퍼널의 병목 구간으로 고정) ③ config.THRESHOLDS
+    를 벗어난 지표 ④ monthly()에서 최근 N개월 평균이 직전 N개월보다
+    떨어진 지표.
+
+    새 임계값을 만들지 않는다 — 전부 이미 있는 값을 빌려 쓴다:
+    trust_check()/config.MIN_SAMPLE(못 믿을 조건), 판단기준.md의 "표본
+    1건 흔들림=100/n" 공식(①·②의 기각 기준), config.THRESHOLDS(③),
+    config.PRIMARY_MOVE_PCT·GUARDRAIL_MOVE_PCT(④의 기각 기준).
+
+    못 믿을 조건에 걸린 칸/구간은 애초에 후보를 만들지 않는다 — 이건
+    "비교 자체가 안 된다"이고, 기각("비교했는데 차이가 작다")과 다르다.
+    기각된 후보도 지우지 않고 "기각사유"만 채워 목록에 남긴다.
+
+    규모_연간건수 = 격차(비율) × 비중(비율) × 연간_건수. 연간_건수는
+    관측된 건수를 config.PERIOD 기간(년)으로 나눠 연간 단위로 맞춘
+    것이다 — datetime.now()를 쓰지 않는다.
+
+    반환: 규모_연간건수 내림차순으로 정렬한 리스트. 기각된 후보는
+    (기각 여부가 먼저이므로) 맨 뒤로 밀린다. 각 원소는
+    {"키","제목","한줄","규모_연간건수","근거축","구간","기각사유"}.
+    """
+    emp, sep = t["HR_직원"], t["HR_퇴사이력"]
+    years = _period_years()
+    n_total = int(len(emp))
+
+    topics: list[dict] = []
+
+    # ① 퍼널 구간 — 획득 퍼널 + 유지 퍼널 각각 하나씩.
+    topics += _topic_funnel_gaps(funnel(emp, sep), "획득", "획득 퍼널",
+                                  n_total, years)
+    topics += _topic_funnel_gaps(retention_funnel(t), "유지", "유지 퍼널",
+                                  n_total, years)
+
+    # ② 분해 축 — 획득 퍼널의 병목 구간을 기준으로 쪼갠다(다른 화면·
+    #   리포트와 같은 구간을 써야 숫자가 어긋나지 않는다).
+    f_acq = funnel(emp, sep)
+    bottleneck_positions = f_acq.index[f_acq["is_bottleneck"]]
+    if len(bottleneck_positions):
+        bi = max(int(bottleneck_positions[0]), 1)
+        step_from = f_acq["step"].iloc[bi - 1]
+        step_to = f_acq["step"].iloc[bi]
+        topics += _topic_axis_gaps(emp, sep, step_from, step_to, n_total, years)
+
+    # ③ 임계값을 벗어난 지표.
+    topics += _topic_threshold_breaches(t, years)
+
+    # ④ 최근 N개월 평균이 직전 N개월보다 떨어진 지표.
+    topics += _topic_trend_drops(t, years)
+
+    topics.sort(key=lambda x: (bool(x["기각사유"]), -x["규모_연간건수"]))
+    return topics
+
+
+# ── 제안 주제 근거 조회 ───────────────────────────────────────────
+# "추세"에서 볼 개월 수. 사용자가 직접 "최근 12개월"이라고 정했다 —
+# RECENT_COHORT_MONTHS(12)와 값은 같지만 용도(코호트 진단)가 달라 같은
+# 이름을 쓰지 않는다.
+EVIDENCE_TREND_MONTHS = 12
+
+# 달마다 추적되지 않는 지표를 topic_evidence()의 threshold 유형에서 만나면
+# 왜 없는지를 사람이 읽을 말로 적는다(monthly()가 이 지표를 빼는 이유를
+# 그대로 풀어 쓴 것 — 새로 사유를 짓지 않는다). 함수 이름·테이블 이름은
+# 문장에 넣지 않는다 — 읽는 사람은 코드를 안 본다.
+_THRESHOLD_TREND_REASONS = {
+    "입사1년내이탈률": "이 지표는 매달 새로 다시 계산해야 해서, 지금은 달마다의 추세를 볼 수 없다.",
+    "평균평가점수": "평가가 분기 단위로만 있어서, 달마다의 추세를 볼 수 없다.",
+}
+
+
+def _evidence_funnel_status(t: dict, kind: str, rest: list[str]) -> dict:
+    """현황 — 그 주제가 속한 퍼널 전체(단계·도달·전환율·병목 표시)."""
+    emp, sep = t["HR_직원"], t["HR_퇴사이력"]
+    cols = ["step", "label", "n", "step_rate", "cum_rate", "drop", "is_bottleneck"]
+    if kind == "funnel_gap":
+        f = funnel(emp, sep) if rest[0] == "획득" else retention_funnel(t)
+        return {"표": f[cols].copy(), "사유": None}
+    if kind == "axis_gap":
+        # axis_gap 후보는 언제나 획득 퍼널의 병목 구간에서 쪼갠 것이다
+        # (proposal_topics() ②의 구현) — 그 획득 퍼널 전체를 보여준다.
+        return {"표": funnel(emp, sep)[cols].copy(), "사유": None}
+    reason = ("이 문제는 특정 퍼널 구간이 아니라 조직 전체를 하나로 집계한 "
+              "값에서 나왔다 — 그래서 속한 퍼널이 없다." if kind == "threshold" else
+              "이 문제는 특정 퍼널 구간이 아니라 여러 달에 걸친 추세에서 나왔다 "
+              "— 그래서 속한 퍼널이 없다.")
+    return {"표": None, "사유": reason}
+
+
+def _evidence_axis_cause(t: dict, kind: str, rest: list[str]) -> dict:
+    """원인 — 그 주제의 분해 축 표(칸·도달·전환·전환율·비중·최고/최저 표시).
+    trust_check()에 걸리는 칸은 지우지 않고 "신뢰"열에 사유를 남긴다(값을
+    숨기는 게 아니라 판정만 다는 것 — 다른 화면과 같은 마스킹 방식).
+    """
+    if kind != "axis_gap":
+        reason = {
+            "funnel_gap": ("이 후보는 분해 축 비교가 아니라 퍼널 구간 자체의 "
+                          "격차에서 나왔다 — 분해 축 표가 없다."),
+            "threshold": ("이 후보는 분해 축이 없는 조직 전체 집계값(임계값 "
+                         "위반)이라 분해 축 표가 없다."),
+            "trend": ("이 후보는 분해 축이 없는 조직 전체 월별 집계값(추세)"
+                     "이라 분해 축 표가 없다."),
+        }.get(kind, "이 유형은 분해 축 표를 만들 수 없다.")
+        return {"표": None, "사유": reason}
+
+    dim, seg = rest[0], rest[1]
+    step_from, step_to = seg.split("->")
+    emp, sep = t["HR_직원"], t["HR_퇴사이력"]
+    g = funnel_by(emp, sep, dim, step_from, step_to).copy()
+    g["신뢰"] = g["도달"].apply(lambda n: trust_check({"ok": True}, int(n)) or "")
+    g["표시"] = ""
+    trustworthy = g[g["신뢰"] == ""]
+    if len(trustworthy):
+        g.loc[trustworthy["전환율"].idxmax(), "표시"] = "최고"
+        g.loc[trustworthy["전환율"].idxmin(), "표시"] = "최저"
+    return {"표": g, "사유": None}
+
+
+def _evidence_scale(t: dict, kind: str, rest: list[str]) -> dict:
+    """규모 — 연간 건수와 환산에 쓴 가정 목록. 실측(raw_count)과 환산
+    (연간_건수)을 서로 다른 키("실측_원자료"·"환산_연간건수")에 담아
+    같은 항목에 섞지 않는다.
+    """
+    emp, sep = t["HR_직원"], t["HR_퇴사이력"]
+    years = _period_years()
+    가정 = [f"1년을 365.25일로 계산해, 관측 기간을 {years:.2f}년으로 봤다."]
+
+    if kind == "funnel_gap":
+        f = funnel(emp, sep) if rest[0] == "획득" else retention_funnel(t)
+        ranked = f[f["step_rate"].notna()].copy()
+        ranked["_못믿음"] = ranked["n"].apply(
+            lambda n: trust_check({"ok": True}, int(n)) is not None)
+        ranked = ranked[~ranked["_못믿음"]].sort_values("step_rate")
+        if len(ranked) < 2:
+            return {"실측_원자료": None, "환산_연간건수": None,
+                    "환산_가정": 가정,
+                    "사유": "비교 가능한 구간이 2개 미만이라 다시 계산할 수 없다."}
+        worst = ranked.iloc[0]
+        raw_count = float(worst["drop"])
+        raw_desc = (f"{rest[0]} 퍼널에서 전환율이 가장 낮은 구간('{worst['step']}')의 "
+                   "감소 인원(실측)")
+        가정.append("이 구간에서 실제로 줄어든 인원 수를 그대로 썼다 — 새로 "
+                  "추정하지 않았다.")
+    elif kind == "axis_gap":
+        dim, seg = rest[0], rest[1]
+        step_from, step_to = seg.split("->")
+        g = funnel_by(emp, sep, dim, step_from, step_to).copy()
+        g["_못믿음"] = g["도달"].apply(
+            lambda n: trust_check({"ok": True}, int(n)) is not None)
+        trustworthy = g[~g["_못믿음"]]
+        if len(trustworthy) < 2:
+            return {"실측_원자료": None, "환산_연간건수": None,
+                    "환산_가정": 가정,
+                    "사유": "비교 가능한 칸이 2개 미만이라 다시 계산할 수 없다."}
+        worst = trustworthy.loc[trustworthy["전환율"].idxmin()]
+        raw_count = float(worst["도달"])
+        raw_desc = (f"'{dim}' 축 {step_from}→{step_to} 구간에서 전환율이 가장 "
+                   f"낮은 칸('{worst[dim]}')의 도달 인원(실측)")
+        가정.append("이 칸에 실제로 도달한 인원 수를 그대로 썼다 — 새로 "
+                  "추정하지 않았다.")
+    elif kind in ("threshold", "trend"):
+        raw_count = float((emp["재직상태"] == "재직").sum())
+        raw_desc = "이 지표가 대표하는 재직 인원(실측) — 조직 전체 집계값이라 축 분해가 없다."
+        가정.append("개인별로 나눌 수 없는 조직 전체 집계값이라, 재직 인원 "
+                  "전체를 기준으로 근사했다 — 실제 영향 인원을 새로 추정하지 "
+                  "않았다.")
+    else:
+        return {"실측_원자료": None, "환산_연간건수": None, "환산_가정": 가정,
+                "사유": "이 유형은 규모를 다시 계산할 수 없다."}
+
+    연간_건수 = raw_count / years if years else 0.0
+    가정.append("이 값을 관측 기간의 길이로 나눠 연간 단위로 바꿨다 — 사건이 "
+              "그 기간 내내 고르게 일어났다고 본 값이며, 계절에 따른 차이는 "
+              "반영하지 않았다.")
+
+    return {
+        "실측_원자료": {"raw_count": raw_count, "설명": raw_desc},
+        "환산_연간건수": {"값": 연간_건수, "기간_년": years},
+        "환산_가정": 가정,
+        "사유": None,
+    }
+
+
+def _evidence_trend(t: dict, kind: str, rest: list[str]) -> dict:
+    """추세 — 관련 지표의 최근 EVIDENCE_TREND_MONTHS개월. monthly()에 없는
+    지표는 지어내지 않고 없는 이유만 적는다.
+    """
+    m = monthly(t)
+    col = None
+    if kind == "trend":
+        col = rest[0]
+    elif kind == "threshold":
+        name = rest[0]
+        if name in m.columns:
+            col = name
+        else:
+            reason = _THRESHOLD_TREND_REASONS.get(
+                name, f"'{name}'는 달 단위로 추적되지 않아 추세를 낼 수 없다.")
+            return {"표": None, "사유": reason}
+    else:
+        reason = ("이 흐름의 단계별 전환율은 달 단위로 추적되지 않아 추세를 "
+                  "낼 수 없다." if kind == "funnel_gap" else
+                  "이 축의 칸별 전환율은 달 단위로 추적되지 않아 추세를 낼 수 없다.")
+        return {"표": None, "사유": reason}
+
+    return {"표": m[col].tail(EVIDENCE_TREND_MONTHS).copy(), "사유": None}
+
+
+def topic_evidence(t: dict, topic: dict) -> dict:
+    """제안 주제 하나(proposal_topics()가 돌려준 원소 하나)에 대해, 제안서가
+    쓸 근거를 조회만 해서 한 번에 모아 돌려준다. **이 함수는 조회만 한다 —
+    문장을 만들지 않는다.** 숫자·표만 돌려주고, 그걸로 어떤 문장을 쓸지는
+    여기서 정하지 않는다(report 쪽 몫).
+
+    반환: {"현황","원인","규모","추세"} 네 키.
+
+        현황  그 주제가 속한 퍼널 전체(단계·도달·전환율·병목 표시)
+        원인  그 주제의 분해 축 표(칸·도달·전환·전환율·비중·최고/최저 표시)
+        규모  연간 건수 + 환산에 쓴 가정 목록
+        추세  관련 지표의 최근 EVIDENCE_TREND_MONTHS(12)개월
+
+    없는 것은 지어내지 않고 그 항목을 None으로 두되, 왜 없는지를 같은
+    항목의 "사유"에 적는다(현황·원인·추세는 {"표": None, "사유": str},
+    규모는 없을 때 {"실측_원자료": None, "환산_연간건수": None,
+    "환산_가정": [...], "사유": str}).
+
+    "규모" 안에서는 실측(raw_count — 실제 관측된 값)과 환산(연간_건수 —
+    기간으로 나눠 바꾼 값)을 각각 "실측_원자료"·"환산_연간건수"로 키를
+    나눠 돌려준다 — 같은 항목에 섞지 않는다.
+    """
+    kind = topic["키"].split(":")[0]
+    rest = topic["키"].split(":")[1:]
+    return {
+        "현황": _evidence_funnel_status(t, kind, rest),
+        "원인": _evidence_axis_cause(t, kind, rest),
+        "규모": _evidence_scale(t, kind, rest),
+        "추세": _evidence_trend(t, kind, rest),
+    }
+
+
 # ── 실험 ──────────────────────────────────────────────────────────
 # ★ 실험별로 어느 구간을 보는지. 도메인이 바뀌면 이 표를 갈아끼운다.
 #   실험이 없는 도메인이면 비워 둔다.
