@@ -355,10 +355,14 @@ _KEY_LABELS = {
 def _display(v):
     """"표"를 HTML로 그리기 직전, funnel()/retention_funnel() 등이 돌려준
     원본 값(예: "1년차_잔류")의 밑줄 이어붙임을 보여줄 때만 공백으로 푼다.
-    원본 반환값 자체는 바꾸지 않는다 — 대시보드 등 다른 화면도 같은 값을
-    그대로 쓰기 때문에, 여기 표 렌더링 자리에서만 처리한다. 이 파일 안에서
-    "표"를 HTML로 옮기는 곳은 모두 이 함수 하나를 거친다.
+    True/False(예: is_bottleneck)도 여기서 "예"/"아니오"로 바꾼다 — 파이썬
+    불리언이 인쇄본에 영문 그대로 찍히지 않게. 원본 반환값 자체는 바꾸지
+    않는다 — 대시보드 등 다른 화면도 같은 값을 그대로 쓰기 때문에, 여기
+    표 렌더링 자리에서만 처리한다. 이 파일 안에서 "표"를 HTML로 옮기는
+    곳은 모두 이 함수 하나를 거친다.
     """
+    if isinstance(v, bool):
+        return "예" if v else "아니오"
     if isinstance(v, str):
         return v.replace("_", " ")
     return v
@@ -402,8 +406,20 @@ def _table_html(표) -> str:
         if not len(표):
             return ""
         표 = 표.rename(columns=_KEY_LABELS)
+        if "전환율" in 표.columns and "도달" in 표.columns:
+            # 원인 표 전용 표시 규칙(적은_표본으로_판단하기.md "30~100건:
+            # 비율은 정수 자리만") — 표본(도달)이 100건 미만인 칸만 정수%,
+            # 100건 이상은 그대로 소수점 한 자리%. .rename()이 이미 원본과
+            # 분리된 사본을 만들어 뒀으므로 여기서 문자열로 바꿔도
+            # viz/proposal_charts.py의 차트가 쓰는 원본 표(sec["표"])의
+            # 숫자형 "전환율"에는 영향이 없다. 최고/최저·흔들림 판정은
+            # core/metrics.py가 이미 끝낸 값을 그대로 옮길 뿐, 여기서
+            # 다시 판단하지 않는다.
+            표["전환율"] = 표.apply(
+                lambda r: (f"{r['전환율']*100:.0f}%" if r["도달"] < 100
+                          else f"{r['전환율']*100:.1f}%"), axis=1)
         for col in 표.columns:
-            if 표[col].dtype == object:
+            if 표[col].dtype == object or 표[col].dtype == bool:
                 표[col] = 표[col].map(_display)
         return f'<div class="table-wrap">{표.to_html(index=False, border=0, na_rep="—")}</div>'
     if isinstance(표, pd.Series):
