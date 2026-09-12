@@ -384,14 +384,32 @@ def _text(value: str) -> str:
     return _NUM.sub(lambda m: f'<span class="num">{m.group(0)}</span>', escaped)
 
 
+# 중첩 dict 안 특정 키의 "값"을 사람이 읽기 쉬운 형태로 표시만 바꾼다
+# (예: raw_count의 207.0 → "207명"). 이 세 키는 core.metrics._evidence_scale()의
+# "실측_원자료"·"환산_연간건수" 안에만 나와 다른 표와 안 겹친다. 반올림·단위는
+# 여기 표시 자리에서만 붙이는 것이고, 계산에 쓰인 원래 숫자(core/metrics.py)는
+# 바꾸지 않는다.
+_VALUE_FORMATTERS = {
+    "raw_count": lambda v: f"{v:,.0f}명",
+    "값": lambda v: f"약 {v:,.1f}명 규모",
+    "기간_년": lambda v: f"{v:.1f}년",
+}
+
+
 def _flatten(v) -> str:
     """"표"의 dict 값이 한 겹 더 dict일 때(예: 규모의 "실측_원자료") 파이썬
-    repr이 아니라 "key: value, key: value"로 풀어 쓴다 — 값은 그대로다.
-    키는 _KEY_LABELS에 있으면 한글 라벨로 바꾸고, 없으면(이미 한글이면)
-    그대로 쓴다.
+    repr이 아니라 "key: value, key: value"로 풀어 쓴다. 키는 _KEY_LABELS에
+    있으면 한글 라벨로 바꾸고, 없으면(이미 한글이면) 그대로 쓴다. 값은
+    _VALUE_FORMATTERS에 있으면 그 표시 형식을 쓰고, 없으면 그대로(_display만
+    거쳐) 쓴다.
     """
     if isinstance(v, dict):
-        return ", ".join(f"{_KEY_LABELS.get(k, k)}: {_display(v2)}" for k, v2 in v.items())
+        parts = []
+        for k, v2 in v.items():
+            fmt = _VALUE_FORMATTERS.get(k)
+            shown = fmt(v2) if fmt is not None else _display(v2)
+            parts.append(f"{_KEY_LABELS.get(k, k)}: {shown}")
+        return ", ".join(parts)
     return str(_display(v))
 
 
