@@ -123,6 +123,7 @@ def _sentence_규모(evidence: dict) -> list[str]:
     return [
         f"이 문제와 관련된 인원은 실측 {raw['raw_count']:,.0f}명이다.",
         f"연간으로 환산하면 {conv['값']:,.0f}명 규모다({_W['scale_assumption']}).",
+        f"즉, 이 속도가 그대로 유지된다면 매년 약 {conv['값']:,.0f}명 규모로 이 문제가 반복된다는 뜻이다.",
     ]
 
 
